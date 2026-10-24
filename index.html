@@ -3,32 +3,100 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Transition Alignment Tool</title>
+  <title>MatchCut Studio — Outfit Transition Creator</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; font-family: sans-serif; }
-    body { background: #121212; color: #fff; display: flex; flex-direction: column; align-items: center; padding: 20px; }
-    h1 { font-size: 1.25rem; margin-bottom: 12px; }
-
-    /* 9:16 vertical viewfinder container */
-    .viewfinder {
-      position: relative;
-      width: 320px;
-      height: 568px;
-      background: #000;
-      border-radius: 12px;
-      overflow: hidden;
-      border: 2px solid #333;
+    :root {
+      --bg: #090a0f;
+      --card-bg: rgba(22, 24, 34, 0.7);
+      --card-border: rgba(255, 255, 255, 0.08);
+      --accent: #6366f1;
+      --accent-hover: #4f46e5;
+      --danger: #f43f5e;
+      --danger-hover: #e11d48;
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
     }
 
-    /* Live camera layer */
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    body {
+      background-color: var(--bg);
+      background-image: 
+        radial-gradient(circle at 50% 0%, rgba(99, 102, 241, 0.15), transparent 45%),
+        radial-gradient(circle at 10% 30%, rgba(244, 63, 94, 0.08), transparent 30%);
+      color: var(--text-main);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 32px 16px;
+    }
+
+    /* Header styling */
+    header {
+      text-align: center;
+      margin-bottom: 24px;
+    }
+
+    h1 {
+      font-size: 1.6rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      background: linear-gradient(135deg, #ffffff 40%, #94a3b8 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 6px;
+    }
+
+    header p {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      letter-spacing: 0.02em;
+    }
+
+    /* Main Container */
+    .app-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      backdrop-filter: blur(20px);
+      border-radius: 28px;
+      padding: 24px;
+      box-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.6);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      max-width: 380px;
+      width: 100%;
+    }
+
+    /* Viewfinder */
+    .viewfinder {
+      position: relative;
+      width: 100%;
+      aspect-ratio: 9 / 16;
+      background: #000;
+      border-radius: 20px;
+      overflow: hidden;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      box-shadow: inset 0 0 20px rgba(0,0,0,0.8);
+    }
+
     video#camera {
       width: 100%;
       height: 100%;
       object-fit: cover;
-      transform: scaleX(-1); /* Mirrored for selfie view */
+      transform: scaleX(-1);
     }
 
-    /* Ghost image overlay layer */
     #ghostOverlay {
       position: absolute;
       top: 0;
@@ -37,178 +105,27 @@
       height: 100%;
       object-fit: cover;
       opacity: 0.45;
-      pointer-events: none; /* Allows taps/clicks to pass through */
+      pointer-events: none;
       display: none;
     }
 
-    /* Status badge inside viewfinder */
-    #statusBadge {
+    /* Pro Camera Reticle / Corners */
+    .viewfinder::before, .viewfinder::after {
+      content: '';
       position: absolute;
-      top: 12px;
-      left: 12px;
-      background: rgba(0, 0, 0, 0.7);
-      padding: 4px 10px;
-      border-radius: 20px;
-      font-size: 0.75rem;
-      font-weight: bold;
-      letter-spacing: 0.5px;
-      display: none;
+      width: 16px;
+      height: 16px;
+      pointer-events: none;
+      border-color: rgba(255, 255, 255, 0.4);
+      border-style: solid;
     }
-    .badge-rec { color: #ef4444; }
-    .badge-pause { color: #f59e0b; }
-
-    .controls, .sliders {
-      margin-top: 14px;
-      display: flex;
-      gap: 10px;
-      align-items: center;
-      flex-wrap: wrap;
-      justify-content: center;
+    .viewfinder::before {
+      top: 14px;
+      left: 14px;
+      border-width: 2px 0 0 2px;
+      border-top-left-radius: 6px;
     }
-
-    button {
-      background: #2563eb;
-      color: white;
-      border: none;
-      padding: 10px 16px;
-      border-radius: 8px;
-      font-weight: bold;
-      cursor: pointer;
-      transition: background 0.2s;
-    }
-    button.recording { background: #dc2626; }
-    button.paused { background: #d97706; }
-    button:disabled { opacity: 0.35; cursor: not-allowed; }
-
-    .help-text {
-      font-size: 0.85rem;
-      color: #888;
-      margin-top: 10px;
-      text-align: center;
-      max-width: 320px;
-      line-height: 1.4;
-    }
-
-    #recordingsList {
-      margin-top: 20px;
-      width: 320px;
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-    }
-    .clip-card {
-      background: #1e1e1e;
-      padding: 10px;
-      border-radius: 8px;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-  </style>
-</head>
-<body>
-
-  <h1>Transition Match Cut Tool</h1>
-
-  <div class="viewfinder">
-    <!-- Camera preview -->
-    <video id="camera" autoplay playsinline muted></video>
-    <!-- Faint ghost overlay -->
-    <img id="ghostOverlay" alt="Reference Ghost Frame" />
-    <!-- Recording / Paused status badge -->
-    <div id="statusBadge"></div>
-  </div>
-
-  <div class="sliders">
-    <label for="opacitySlider">Ghost Opacity:</label>
-    <input type="range" id="opacitySlider" min="0" max="1" step="0.05" value="0.45" />
-    <button id="clearGhostBtn">Remove Ghost</button>
-  </div>
-
-  <div class="controls">
-    <button id="recordBtn">Start Recording</button>
-    <button id="pauseBtn" disabled>Pause</button>
-    <button id="snapGhostBtn">Freeze Frame as Ghost</button>
-  </div>
-
-  <p class="help-text">Tip: Hit <strong>Pause</strong>, click <strong>Freeze Frame as Ghost</strong>, change clothes, line up your position, and hit <strong>Resume</strong>!</p>
-
-  <div id="recordingsList"></div>
-
-  <script>
-    const camera = document.getElementById('camera');
-    const ghost = document.getElementById('ghostOverlay');
-    const opacitySlider = document.getElementById('opacitySlider');
-    const recordBtn = document.getElementById('recordBtn');
-    const pauseBtn = document.getElementById('pauseBtn');
-    const snapGhostBtn = document.getElementById('snapGhostBtn');
-    const clearGhostBtn = document.getElementById('clearGhostBtn');
-    const statusBadge = document.getElementById('statusBadge');
-    const recordingsList = document.getElementById('recordingsList');
-
-    let stream = null;
-    let mediaRecorder = null;
-    let recordedChunks = [];
-    let takeCount = 1;
-
-    // 1. Request camera stream (portrait 9:16)
-    async function initCamera() {
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: 'user', width: { ideal: 720 }, height: { ideal: 1280 } },
-          audio: true
-        });
-        camera.srcObject = stream;
-      } catch (err) {
-        alert("Camera access denied or unavailable: " + err.message);
-      }
-    }
-    initCamera();
-
-    // 2. Adjust ghost frame opacity
-    opacitySlider.addEventListener('input', (e) => {
-      ghost.style.opacity = e.target.value;
-    });
-
-    // 3. Clear ghost frame
-    clearGhostBtn.addEventListener('click', () => {
-      ghost.style.display = 'none';
-      ghost.src = '';
-    });
-
-    // 4. Snap current camera frame as the ghost overlay
-    function captureGhostFrame() {
-      if (!camera.videoWidth) return;
-      const canvas = document.createElement('canvas');
-      canvas.width = camera.videoWidth;
-      canvas.height = camera.videoHeight;
-      const ctx = canvas.getContext('2d');
-      // Mirror the frame to match the mirrored selfie view
-      ctx.translate(canvas.width, 0);
-      ctx.scale(-1, 1);
-      ctx.drawImage(camera, 0, 0, canvas.width, canvas.height);
-      ghost.src = canvas.toDataURL('image/png');
-      ghost.style.display = 'block';
-    }
-    snapGhostBtn.addEventListener('click', captureGhostFrame);
-
-    // 5. Paste an image straight from clipboard (Ctrl+V / Cmd+V)
-    window.addEventListener('paste', (e) => {
-      const items = e.clipboardData?.items;
-      if (!items) return;
-      for (const item of items) {
-        if (item.type.startsWith('image/')) {
-          const blob = item.getAsFile();
-          const reader = new FileReader();
-          reader.onload = (event) => {
-            ghost.src = event.target.result;
-            ghost.style.display = 'block';
-          };
-          reader.readAsDataURL(blob);
-          break;
-        }
-      }
-    });
-
-    // 6. Record, Stop, and Manage Output
-    recordBtn.addEventListener
+    .viewfinder::after {
+      bottom: 14px;
+      right: 14px;
+      border-width: 0 2
