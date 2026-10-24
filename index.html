@@ -2,22 +2,47 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <title>Transition Alignment Tool</title>
   <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; font-family: sans-serif; }
-    body { background: #121212; color: #fff; display: flex; flex-direction: column; align-items: center; padding: 20px; }
-    h1 { font-size: 1.25rem; margin-bottom: 12px; }
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      -webkit-tap-highlight-color: transparent;
+    }
 
-    /* 9:16 vertical viewfinder container */
+    body {
+      background: #0f1015;
+      color: #fff;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 12px;
+      min-height: 100dvh;
+    }
+
+    h1 {
+      font-size: 1.15rem;
+      margin-bottom: 8px;
+      font-weight: 700;
+      text-align: center;
+    }
+
+    /* Responsive Viewfinder for phone screens */
     .viewfinder {
       position: relative;
-      width: 320px;
-      height: 568px;
+      width: 100%;
+      max-width: 360px;
+      height: min(60dvh, 480px);
       background: #000;
-      border-radius: 12px;
+      border-radius: 18px;
       overflow: hidden;
-      border: 2px solid #333;
+      border: 1.5px solid rgba(255, 255, 255, 0.15);
+      display: flex;
+      align-items: center;
+      justify-content: center;
     }
 
     /* Live camera layer */
@@ -25,9 +50,11 @@
       width: 100%;
       height: 100%;
       object-fit: cover;
-      transform: scaleX(-1); /* Mirrored for selfie view */
-      transform-origin: center center;
-      transition: transform 0.05s ease-out;
+    }
+
+    /* Mirroring class for selfie camera */
+    video.mirrored {
+      transform: scaleX(-1);
     }
 
     /* Ghost image overlay layer */
@@ -39,270 +66,79 @@
       height: 100%;
       object-fit: cover;
       opacity: 0.45;
-      pointer-events: none; /* Allows taps/clicks to pass through */
+      pointer-events: none;
       display: none;
     }
 
-    .controls, .sliders {
-      margin-top: 14px;
-      display: flex;
-      gap: 10px;
-      align-items: center;
-      flex-wrap: wrap;
-      justify-content: center;
-    }
-
-    .control-group {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      font-size: 0.9rem;
-    }
-
-    button {
-      background: #2563eb;
-      color: white;
-      border: none;
-      padding: 10px 16px;
-      border-radius: 8px;
-      font-weight: bold;
-      cursor: pointer;
-    }
-    button.recording { background: #dc2626; }
-    button:disabled { opacity: 0.4; cursor: not-allowed; }
-
-    .help-text {
-      font-size: 0.85rem;
-      color: #888;
+    /* Mobile Controls layout */
+    .controls-panel {
+      width: 100%;
+      max-width: 360px;
       margin-top: 10px;
-      text-align: center;
-    }
-
-    #recordingsList {
-      margin-top: 20px;
-      width: 320px;
       display: flex;
       flex-direction: column;
       gap: 10px;
     }
-    .clip-card {
-      background: #1e1e1e;
-      padding: 10px;
-      border-radius: 8px;
+
+    .slider-box {
       display: flex;
-      justify-content: space-between;
       align-items: center;
-    }
-  </style>
-</head>
-<body>
-
-  <h1>Transition Match Cut Tool</h1>
-
-  <div class="viewfinder">
-    <!-- Camera preview -->
-    <video id="camera" autoplay playsinline muted></video>
-    <!-- Faint ghost overlay -->
-    <img id="ghostOverlay" alt="Reference Ghost Frame" />
-  </div>
-
-  <div class="sliders">
-    <div class="control-group">
-      <label for="zoomSlider">Zoom (<span id="zoomVal">1.0x</span>):</label>
-      <input type="range" id="zoomSlider" min="1" max="5" step="0.1" value="1" />
-    </div>
-
-    <div class="control-group">
-      <label for="opacitySlider">Ghost Opacity:</label>
-      <input type="range" id="opacitySlider" min="0" max="1" step="0.05" value="0.45" />
-    </div>
-
-    <button id="clearGhostBtn">Remove Ghost</button>
-  </div>
-
-  <div class="controls">
-    <button id="recordBtn">Start Recording</button>
-    <button id="snapGhostBtn">Freeze Frame as Ghost</button>
-  </div>
-
-  <p class="help-text">Tip: Press <strong>Ctrl+V</strong> (or <strong>Cmd+V</strong>) to paste an image/screenshot directly from your clipboard.</p>
-
-  <div id="recordingsList"></div>
-
-  <script>
-    const camera = document.getElementById('camera');
-    const ghost = document.getElementById('ghostOverlay');
-    const opacitySlider = document.getElementById('opacitySlider');
-    const zoomSlider = document.getElementById('zoomSlider');
-    const zoomVal = document.getElementById('zoomVal');
-    const recordBtn = document.getElementById('recordBtn');
-    const snapGhostBtn = document.getElementById('snapGhostBtn');
-    const clearGhostBtn = document.getElementById('clearGhostBtn');
-    const recordingsList = document.getElementById('recordingsList');
-
-    let stream = null;
-    let videoTrack = null;
-    let mediaRecorder = null;
-    let recordedChunks = [];
-    let takeCount = 1;
-    let isHardwareZoom = false;
-
-    // 1. Request camera stream (portrait 9:16 preferred)
-    async function initCamera() {
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: { 
-            facingMode: 'user', 
-            width: { ideal: 720 }, 
-            height: { ideal: 1280 } 
-          },
-          audio: true
-        });
-        camera.srcObject = stream;
-        videoTrack = stream.getVideoTracks()[0];
-        setupZoomControls();
-      } catch (err) {
-        alert("Camera access denied or unavailable: " + err.message);
-      }
-    }
-    initCamera();
-
-    // 2. Configure Zoom (Native Hardware zoom when available, CSS fallback otherwise)
-    function setupZoomControls() {
-      if (!videoTrack) return;
-
-      const capabilities = videoTrack.getCapabilities ? videoTrack.getCapabilities() : {};
-
-      if ('zoom' in capabilities) {
-        // Hardware stream zoom is supported
-        isHardwareZoom = true;
-        zoomSlider.min = capabilities.zoom.min;
-        zoomSlider.max = capabilities.zoom.max;
-        zoomSlider.step = capabilities.zoom.step || 0.1;
-        const currentZoom = videoTrack.getSettings().zoom || capabilities.zoom.min;
-        zoomSlider.value = currentZoom;
-        zoomVal.textContent = parseFloat(currentZoom).toFixed(1) + 'x';
-
-        zoomSlider.addEventListener('input', async (e) => {
-          const val = parseFloat(e.target.value);
-          zoomVal.textContent = val.toFixed(1) + 'x';
-          try {
-            await videoTrack.applyConstraints({
-              advanced: [{ zoom: val }]
-            });
-          } catch (err) {
-            console.error("Hardware zoom constraint failed:", err);
-          }
-        });
-      } else {
-        // Fallback: CSS digital zoom
-        isHardwareZoom = false;
-        zoomSlider.min = 1;
-        zoomSlider.max = 4;
-        zoomSlider.step = 0.05;
-        zoomSlider.value = 1;
-        zoomVal.textContent = '1.0x';
-
-        zoomSlider.addEventListener('input', (e) => {
-          const val = parseFloat(e.target.value);
-          zoomVal.textContent = val.toFixed(1) + 'x';
-          camera.style.transform = `scaleX(-1) scale(${val})`;
-        });
-      }
+      gap: 12px;
+      background: #1a1b23;
+      padding: 10px 14px;
+      border-radius: 12px;
+      font-size: 0.85rem;
     }
 
-    // 3. Adjust ghost frame opacity
-    opacitySlider.addEventListener('input', (e) => {
-      ghost.style.opacity = e.target.value;
-    });
+    .slider-box input[type="range"] {
+      flex: 1;
+      accent-color: #3b82f6;
+      height: 6px;
+    }
 
-    // 4. Clear ghost frame
-    clearGhostBtn.addEventListener('click', () => {
-      ghost.style.display = 'none';
-      ghost.src = '';
-    });
+    .button-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
 
-    // 5. Snap current camera frame as the ghost overlay
-    snapGhostBtn.addEventListener('click', () => {
-      if (!camera.videoWidth) return;
-      const canvas = document.createElement('canvas');
-      canvas.width = camera.videoWidth;
-      canvas.height = camera.videoHeight;
-      const ctx = canvas.getContext('2d');
+    button, label.file-btn {
+      background: #2563eb;
+      color: white;
+      border: none;
+      min-height: 46px;
+      padding: 8px 12px;
+      border-radius: 12px;
+      font-weight: 600;
+      font-size: 0.85rem;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      text-decoration: none;
+      user-select: none;
+    }
 
-      // Mirror the frame horizontally to match mirrored selfie view
-      ctx.translate(canvas.width, 0);
-      ctx.scale(-1, 1);
+    button:active, label.file-btn:active {
+      transform: scale(0.97);
+    }
 
-      if (isHardwareZoom) {
-        // Hardware zoom is already baked into the video stream frame
-        ctx.drawImage(camera, 0, 0, canvas.width, canvas.height);
-      } else {
-        // If using CSS zoom, crop from center so ghost matches the zoomed-in preview
-        const zoom = parseFloat(zoomSlider.value) || 1;
-        const sw = camera.videoWidth / zoom;
-        const sh = camera.videoHeight / zoom;
-        const sx = (camera.videoWidth - sw) / 2;
-        const sy = (camera.videoHeight - sh) / 2;
-        ctx.drawImage(camera, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
-      }
+    button.btn-secondary, label.file-btn {
+      background: #272833;
+    }
 
-      ghost.src = canvas.toDataURL('image/png');
-      ghost.style.display = 'block';
-    });
+    button#recordBtn {
+      grid-column: span 2;
+      background: #ef4444;
+      font-size: 0.95rem;
+    }
 
-    // 6. Paste an image straight from clipboard (Ctrl+V / Cmd+V)
-    window.addEventListener('paste', (e) => {
-      const items = e.clipboardData?.items;
-      if (!items) return;
-      for (const item of items) {
-        if (item.type.startsWith('image/')) {
-          const blob = item.getAsFile();
-          const reader = new FileReader();
-          reader.onload = (event) => {
-            ghost.src = event.target.result;
-            ghost.style.display = 'block';
-          };
-          reader.readAsDataURL(blob);
-          break;
-        }
-      }
-    });
+    button#recordBtn.recording {
+      background: #991b1b;
+      animation: pulse 1.2s infinite;
+    }
 
-    // 7. Record ONLY the camera stream (Ghost frame is completely excluded)
-    recordBtn.addEventListener('click', () => {
-      if (!stream) return;
-
-      if (mediaRecorder && mediaRecorder.state === 'recording') {
-        mediaRecorder.stop();
-        recordBtn.textContent = 'Start Recording';
-        recordBtn.classList.remove('recording');
-      } else {
-        recordedChunks = [];
-        mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm' });
-
-        mediaRecorder.ondataavailable = (e) => {
-          if (e.data.size > 0) recordedChunks.push(e.data);
-        };
-
-        mediaRecorder.onstop = () => {
-          const blob = new Blob(recordedChunks, { type: 'video/webm' });
-          const url = URL.createObjectURL(blob);
-          
-          const card = document.createElement('div');
-          card.className = 'clip-card';
-          card.innerHTML = `
-            <span>Take #${takeCount++} (Clean Video)</span>
-            <a href="${url}" download="take_${takeCount - 1}.webm" style="color: #60a5fa;">Download</a>
-          `;
-          recordingsList.prepend(card);
-        };
-
-        mediaRecorder.start();
-        recordBtn.textContent = 'Stop Recording';
-        recordBtn.classList.add('recording');
-      }
-    });
-  </script>
-</body>
-</html>
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.7
