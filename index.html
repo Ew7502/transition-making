@@ -12,20 +12,17 @@
     .viewfinder {
       position: relative;
       width: 320px;
-      height: 568px;
-      background: #000;
+      height: 480px;
+      background: #222;
       border-radius: 12px;
       overflow: hidden;
       border: 2px solid #333;
-      display: flex;
-      align-items: center;
-      justify-content: center;
     }
 
     video#camera {
       width: 100%;
       height: 100%;
-      object-fit: contain;
+      object-fit: cover;
       transform: scaleX(-1);
     }
 
@@ -35,7 +32,7 @@
       left: 0;
       width: 100%;
       height: 100%;
-      object-fit: contain;
+      object-fit: cover;
       opacity: 0.45;
       pointer-events: none;
       display: none;
@@ -60,7 +57,6 @@
       cursor: pointer;
     }
     button.recording { background: #dc2626; }
-    button:disabled { opacity: 0.4; cursor: not-allowed; }
 
     .help-text {
       font-size: 0.85rem;
@@ -106,7 +102,7 @@
     <button id="snapGhostBtn">Freeze Frame as Ghost</button>
   </div>
 
-  <p class="help-text">Tip: Press <strong>Ctrl+V</strong> (or <strong>Cmd+V</strong>) to paste an image/screenshot directly from your clipboard.</p>
+  <p class="help-text">Tip: Press <strong>Ctrl+V</strong> to paste a reference picture.</p>
 
   <div id="recordingsList"></div>
 
@@ -124,28 +120,83 @@
     let recordedChunks = [];
     let takeCount = 1;
 
-    async function initCamera() {
+    async function startCamera() {
       try {
         stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: 'user' },
+          video: true,
           audio: true
         });
         camera.srcObject = stream;
+        camera.play();
       } catch (err) {
-        alert("Camera access denied or unavailable: " + err.message);
+        alert("Camera error: " + err.message);
       }
     }
-    initCamera();
 
+    // Start camera immediately
+    startCamera();
+
+    // Opacity
     opacitySlider.addEventListener('input', (e) => {
       ghost.style.opacity = e.target.value;
     });
 
+    // Clear ghost
     clearGhostBtn.addEventListener('click', () => {
       ghost.style.display = 'none';
       ghost.src = '';
     });
 
+    // Snap ghost
     snapGhostBtn.addEventListener('click', () => {
       if (!camera.videoWidth) return;
-      const canvas = document.createElement('
+      const canvas = document.createElement('canvas');
+      canvas.width = camera.videoWidth;
+      canvas.height = camera.videoHeight;
+      const ctx = canvas.getContext('2d');
+      ctx.translate(canvas.width, 0);
+      ctx.scale(-1, 1);
+      ctx.drawImage(camera, 0, 0, canvas.width, canvas.height);
+      ghost.src = canvas.toDataURL('image/png');
+      ghost.style.display = 'block';
+    });
+
+    // Paste image
+    window.addEventListener('paste', (e) => {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      for (const item of items) {
+        if (item.type.startsWith('image/')) {
+          const blob = item.getAsFile();
+          const reader = new FileReader();
+          reader.onload = (event) => {
+            ghost.src = event.target.result;
+            ghost.style.display = 'block';
+          };
+          reader.readAsDataURL(blob);
+          break;
+        }
+      }
+    });
+
+    // Record
+    recordBtn.addEventListener('click', () => {
+      if (!stream) return;
+
+      if (mediaRecorder && mediaRecorder.state === 'recording') {
+        mediaRecorder.stop();
+        recordBtn.textContent = 'Start Recording';
+        recordBtn.classList.remove('recording');
+      } else {
+        recordedChunks = [];
+        mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm' });
+
+        mediaRecorder.ondataavailable = (e) => {
+          if (e.data.size > 0) recordedChunks.push(e.data);
+        };
+
+        mediaRecorder.onstop = () => {
+          const blob = new Blob(recordedChunks, { type: 'video/webm' });
+          const url = URL.createObjectURL(blob);
+          
+          const card = document.createElement('div');
