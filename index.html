@@ -9,7 +9,6 @@
     body { background: #121212; color: #fff; display: flex; flex-direction: column; align-items: center; padding: 20px; }
     h1 { font-size: 1.25rem; margin-bottom: 12px; }
 
-    /* 9:16 vertical viewfinder container */
     .viewfinder {
       position: relative;
       width: 320px;
@@ -18,26 +17,27 @@
       border-radius: 12px;
       overflow: hidden;
       border: 2px solid #333;
+      display: flex;
+      align-items: center;
+      justify-content: center;
     }
 
-    /* Live camera layer */
     video#camera {
       width: 100%;
       height: 100%;
-      object-fit: cover;
-      transform: scaleX(-1); /* Mirrored for selfie view */
+      object-fit: contain;
+      transform: scaleX(-1);
     }
 
-    /* Ghost image overlay layer */
     #ghostOverlay {
       position: absolute;
       top: 0;
       left: 0;
       width: 100%;
       height: 100%;
-      object-fit: cover;
+      object-fit: contain;
       opacity: 0.45;
-      pointer-events: none; /* Allows taps/clicks to pass through */
+      pointer-events: none;
       display: none;
     }
 
@@ -91,9 +91,7 @@
   <h1>Transition Match Cut Tool</h1>
 
   <div class="viewfinder">
-    <!-- Camera preview -->
     <video id="camera" autoplay playsinline muted></video>
-    <!-- Faint ghost overlay -->
     <img id="ghostOverlay" alt="Reference Ghost Frame" />
   </div>
 
@@ -126,11 +124,10 @@
     let recordedChunks = [];
     let takeCount = 1;
 
-    // 1. Request camera stream (portrait 9:16 preferred)
     async function initCamera() {
       try {
         stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: 'user', width: { ideal: 720 }, height: { ideal: 1280 } },
+          video: { facingMode: 'user' },
           audio: true
         });
         camera.srcObject = stream;
@@ -140,84 +137,15 @@
     }
     initCamera();
 
-    // 2. Adjust ghost frame opacity
     opacitySlider.addEventListener('input', (e) => {
       ghost.style.opacity = e.target.value;
     });
 
-    // 3. Clear ghost frame
     clearGhostBtn.addEventListener('click', () => {
       ghost.style.display = 'none';
       ghost.src = '';
     });
 
-    // 4. Snap current camera frame as the ghost overlay
     snapGhostBtn.addEventListener('click', () => {
       if (!camera.videoWidth) return;
-      const canvas = document.createElement('canvas');
-      canvas.width = camera.videoWidth;
-      canvas.height = camera.videoHeight;
-      const ctx = canvas.getContext('2d');
-      // Mirror the frame to match the mirrored selfie view
-      ctx.translate(canvas.width, 0);
-      ctx.scale(-1, 1);
-      ctx.drawImage(camera, 0, 0, canvas.width, canvas.height);
-      ghost.src = canvas.toDataURL('image/png');
-      ghost.style.display = 'block';
-    });
-
-    // 5. Paste an image straight from clipboard (Ctrl+V / Cmd+V)
-    window.addEventListener('paste', (e) => {
-      const items = e.clipboardData?.items;
-      if (!items) return;
-      for (const item of items) {
-        if (item.type.startsWith('image/')) {
-          const blob = item.getAsFile();
-          const reader = new FileReader();
-          reader.onload = (event) => {
-            ghost.src = event.target.result;
-            ghost.style.display = 'block';
-          };
-          reader.readAsDataURL(blob);
-          break;
-        }
-      }
-    });
-
-    // 6. Record ONLY the camera stream (Ghost frame is completely excluded)
-    recordBtn.addEventListener('click', () => {
-      if (!stream) return;
-
-      if (mediaRecorder && mediaRecorder.state === 'recording') {
-        mediaRecorder.stop();
-        recordBtn.textContent = 'Start Recording';
-        recordBtn.classList.remove('recording');
-      } else {
-        recordedChunks = [];
-        mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm' });
-
-        mediaRecorder.ondataavailable = (e) => {
-          if (e.data.size > 0) recordedChunks.push(e.data);
-        };
-
-        mediaRecorder.onstop = () => {
-          const blob = new Blob(recordedChunks, { type: 'video/webm' });
-          const url = URL.createObjectURL(blob);
-          
-          const card = document.createElement('div');
-          card.className = 'clip-card';
-          card.innerHTML = `
-            <span>Take #${takeCount++} (Clean Video)</span>
-            <a href="${url}" download="take_${takeCount - 1}.webm" style="color: #60a5fa;">Download</a>
-          `;
-          recordingsList.prepend(card);
-        };
-
-        mediaRecorder.start();
-        recordBtn.textContent = 'Stop Recording';
-        recordBtn.classList.add('recording');
-      }
-    });
-  </script>
-</body>
-</html>
+      const canvas = document.createElement('
