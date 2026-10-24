@@ -25,7 +25,9 @@
       width: 100%;
       height: 100%;
       object-fit: cover;
-      transform: scaleX(0); /* Mirrored for selfie view */
+      transform: scaleX(-1); /* Mirrored for selfie view */
+      transform-origin: center center;
+      transition: transform 0.05s ease-out;
     }
 
     /* Ghost image overlay layer */
@@ -48,6 +50,13 @@
       align-items: center;
       flex-wrap: wrap;
       justify-content: center;
+    }
+
+    .control-group {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.9rem;
     }
 
     button {
@@ -98,8 +107,16 @@
   </div>
 
   <div class="sliders">
-    <label for="opacitySlider">Ghost Opacity:</label>
-    <input type="range" id="opacitySlider" min="0" max="1" step="0.05" value="0.45" />
+    <div class="control-group">
+      <label for="zoomSlider">Zoom (<span id="zoomVal">1.0x</span>):</label>
+      <input type="range" id="zoomSlider" min="1" max="5" step="0.1" value="1" />
+    </div>
+
+    <div class="control-group">
+      <label for="opacitySlider">Ghost Opacity:</label>
+      <input type="range" id="opacitySlider" min="0" max="1" step="0.05" value="0.45" />
+    </div>
+
     <button id="clearGhostBtn">Remove Ghost</button>
   </div>
 
@@ -116,57 +133,125 @@
     const camera = document.getElementById('camera');
     const ghost = document.getElementById('ghostOverlay');
     const opacitySlider = document.getElementById('opacitySlider');
+    const zoomSlider = document.getElementById('zoomSlider');
+    const zoomVal = document.getElementById('zoomVal');
     const recordBtn = document.getElementById('recordBtn');
     const snapGhostBtn = document.getElementById('snapGhostBtn');
     const clearGhostBtn = document.getElementById('clearGhostBtn');
     const recordingsList = document.getElementById('recordingsList');
 
     let stream = null;
+    let videoTrack = null;
     let mediaRecorder = null;
     let recordedChunks = [];
     let takeCount = 1;
+    let isHardwareZoom = false;
 
     // 1. Request camera stream (portrait 9:16 preferred)
     async function initCamera() {
       try {
         stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: 'user', width: { ideal: 720 }, height: { ideal: 1280 } },
+          video: { 
+            facingMode: 'user', 
+            width: { ideal: 720 }, 
+            height: { ideal: 1280 } 
+          },
           audio: true
         });
         camera.srcObject = stream;
+        videoTrack = stream.getVideoTracks()[0];
+        setupZoomControls();
       } catch (err) {
         alert("Camera access denied or unavailable: " + err.message);
       }
     }
     initCamera();
 
-    // 2. Adjust ghost frame opacity
+    // 2. Configure Zoom (Native Hardware zoom when available, CSS fallback otherwise)
+    function setupZoomControls() {
+      if (!videoTrack) return;
+
+      const capabilities = videoTrack.getCapabilities ? videoTrack.getCapabilities() : {};
+
+      if ('zoom' in capabilities) {
+        // Hardware stream zoom is supported
+        isHardwareZoom = true;
+        zoomSlider.min = capabilities.zoom.min;
+        zoomSlider.max = capabilities.zoom.max;
+        zoomSlider.step = capabilities.zoom.step || 0.1;
+        const currentZoom = videoTrack.getSettings().zoom || capabilities.zoom.min;
+        zoomSlider.value = currentZoom;
+        zoomVal.textContent = parseFloat(currentZoom).toFixed(1) + 'x';
+
+        zoomSlider.addEventListener('input', async (e) => {
+          const val = parseFloat(e.target.value);
+          zoomVal.textContent = val.toFixed(1) + 'x';
+          try {
+            await videoTrack.applyConstraints({
+              advanced: [{ zoom: val }]
+            });
+          } catch (err) {
+            console.error("Hardware zoom constraint failed:", err);
+          }
+        });
+      } else {
+        // Fallback: CSS digital zoom
+        isHardwareZoom = false;
+        zoomSlider.min = 1;
+        zoomSlider.max = 4;
+        zoomSlider.step = 0.05;
+        zoomSlider.value = 1;
+        zoomVal.textContent = '1.0x';
+
+        zoomSlider.addEventListener('input', (e) => {
+          const val = parseFloat(e.target.value);
+          zoomVal.textContent = val.toFixed(1) + 'x';
+          camera.style.transform = `scaleX(-1) scale(${val})`;
+        });
+      }
+    }
+
+    // 3. Adjust ghost frame opacity
     opacitySlider.addEventListener('input', (e) => {
       ghost.style.opacity = e.target.value;
     });
 
-    // 3. Clear ghost frame
+    // 4. Clear ghost frame
     clearGhostBtn.addEventListener('click', () => {
       ghost.style.display = 'none';
       ghost.src = '';
     });
 
-    // 4. Snap current camera frame as the ghost overlay
+    // 5. Snap current camera frame as the ghost overlay
     snapGhostBtn.addEventListener('click', () => {
       if (!camera.videoWidth) return;
       const canvas = document.createElement('canvas');
       canvas.width = camera.videoWidth;
       canvas.height = camera.videoHeight;
       const ctx = canvas.getContext('2d');
-      // Mirror the frame to match the mirrored selfie view
+
+      // Mirror the frame horizontally to match mirrored selfie view
       ctx.translate(canvas.width, 0);
       ctx.scale(-1, 1);
-      ctx.drawImage(camera, 0, 0, canvas.width, canvas.height);
+
+      if (isHardwareZoom) {
+        // Hardware zoom is already baked into the video stream frame
+        ctx.drawImage(camera, 0, 0, canvas.width, canvas.height);
+      } else {
+        // If using CSS zoom, crop from center so ghost matches the zoomed-in preview
+        const zoom = parseFloat(zoomSlider.value) || 1;
+        const sw = camera.videoWidth / zoom;
+        const sh = camera.videoHeight / zoom;
+        const sx = (camera.videoWidth - sw) / 2;
+        const sy = (camera.videoHeight - sh) / 2;
+        ctx.drawImage(camera, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
+      }
+
       ghost.src = canvas.toDataURL('image/png');
       ghost.style.display = 'block';
     });
 
-    // 5. Paste an image straight from clipboard (Ctrl+V / Cmd+V)
+    // 6. Paste an image straight from clipboard (Ctrl+V / Cmd+V)
     window.addEventListener('paste', (e) => {
       const items = e.clipboardData?.items;
       if (!items) return;
@@ -184,7 +269,7 @@
       }
     });
 
-    // 6. Record ONLY the camera stream (Ghost frame is completely excluded)
+    // 7. Record ONLY the camera stream (Ghost frame is completely excluded)
     recordBtn.addEventListener('click', () => {
       if (!stream) return;
 
