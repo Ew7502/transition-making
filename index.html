@@ -41,6 +41,22 @@
       display: none;
     }
 
+    /* Status badge inside viewfinder */
+    #statusBadge {
+      position: absolute;
+      top: 12px;
+      left: 12px;
+      background: rgba(0, 0, 0, 0.7);
+      padding: 4px 10px;
+      border-radius: 20px;
+      font-size: 0.75rem;
+      font-weight: bold;
+      letter-spacing: 0.5px;
+      display: none;
+    }
+    .badge-rec { color: #ef4444; }
+    .badge-pause { color: #f59e0b; }
+
     .controls, .sliders {
       margin-top: 14px;
       display: flex;
@@ -58,15 +74,19 @@
       border-radius: 8px;
       font-weight: bold;
       cursor: pointer;
+      transition: background 0.2s;
     }
     button.recording { background: #dc2626; }
-    button:disabled { opacity: 0.4; cursor: not-allowed; }
+    button.paused { background: #d97706; }
+    button:disabled { opacity: 0.35; cursor: not-allowed; }
 
     .help-text {
       font-size: 0.85rem;
       color: #888;
       margin-top: 10px;
       text-align: center;
+      max-width: 320px;
+      line-height: 1.4;
     }
 
     #recordingsList {
@@ -95,6 +115,8 @@
     <video id="camera" autoplay playsinline muted></video>
     <!-- Faint ghost overlay -->
     <img id="ghostOverlay" alt="Reference Ghost Frame" />
+    <!-- Recording / Paused status badge -->
+    <div id="statusBadge"></div>
   </div>
 
   <div class="sliders">
@@ -105,10 +127,11 @@
 
   <div class="controls">
     <button id="recordBtn">Start Recording</button>
+    <button id="pauseBtn" disabled>Pause</button>
     <button id="snapGhostBtn">Freeze Frame as Ghost</button>
   </div>
 
-  <p class="help-text">Tip: Press <strong>Ctrl+V</strong> (or <strong>Cmd+V</strong>) to paste an image/screenshot directly from your clipboard.</p>
+  <p class="help-text">Tip: Hit <strong>Pause</strong>, click <strong>Freeze Frame as Ghost</strong>, change clothes, line up your position, and hit <strong>Resume</strong>!</p>
 
   <div id="recordingsList"></div>
 
@@ -117,8 +140,10 @@
     const ghost = document.getElementById('ghostOverlay');
     const opacitySlider = document.getElementById('opacitySlider');
     const recordBtn = document.getElementById('recordBtn');
+    const pauseBtn = document.getElementById('pauseBtn');
     const snapGhostBtn = document.getElementById('snapGhostBtn');
     const clearGhostBtn = document.getElementById('clearGhostBtn');
+    const statusBadge = document.getElementById('statusBadge');
     const recordingsList = document.getElementById('recordingsList');
 
     let stream = null;
@@ -126,7 +151,7 @@
     let recordedChunks = [];
     let takeCount = 1;
 
-    // 1. Request camera stream (portrait 9:16 preferred)
+    // 1. Request camera stream (portrait 9:16)
     async function initCamera() {
       try {
         stream = await navigator.mediaDevices.getUserMedia({
@@ -152,7 +177,7 @@
     });
 
     // 4. Snap current camera frame as the ghost overlay
-    snapGhostBtn.addEventListener('click', () => {
+    function captureGhostFrame() {
       if (!camera.videoWidth) return;
       const canvas = document.createElement('canvas');
       canvas.width = camera.videoWidth;
@@ -164,7 +189,8 @@
       ctx.drawImage(camera, 0, 0, canvas.width, canvas.height);
       ghost.src = canvas.toDataURL('image/png');
       ghost.style.display = 'block';
-    });
+    }
+    snapGhostBtn.addEventListener('click', captureGhostFrame);
 
     // 5. Paste an image straight from clipboard (Ctrl+V / Cmd+V)
     window.addEventListener('paste', (e) => {
@@ -184,40 +210,5 @@
       }
     });
 
-    // 6. Record ONLY the camera stream (Ghost frame is completely excluded)
-    recordBtn.addEventListener('click', () => {
-      if (!stream) return;
-
-      if (mediaRecorder && mediaRecorder.state === 'recording') {
-        mediaRecorder.stop();
-        recordBtn.textContent = 'Start Recording';
-        recordBtn.classList.remove('recording');
-      } else {
-        recordedChunks = [];
-        mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm' });
-
-        mediaRecorder.ondataavailable = (e) => {
-          if (e.data.size > 0) recordedChunks.push(e.data);
-        };
-
-        mediaRecorder.onstop = () => {
-          const blob = new Blob(recordedChunks, { type: 'video/webm' });
-          const url = URL.createObjectURL(blob);
-          
-          const card = document.createElement('div');
-          card.className = 'clip-card';
-          card.innerHTML = `
-            <span>Take #${takeCount++} (Clean Video)</span>
-            <a href="${url}" download="take_${takeCount - 1}.webm" style="color: #60a5fa;">Download</a>
-          `;
-          recordingsList.prepend(card);
-        };
-
-        mediaRecorder.start();
-        recordBtn.textContent = 'Stop Recording';
-        recordBtn.classList.add('recording');
-      }
-    });
-  </script>
-</body>
-</html>
+    // 6. Record, Stop, and Manage Output
+    recordBtn.addEventListener
